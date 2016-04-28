@@ -16,9 +16,7 @@ HUB_LOC = os.environ['HUE_HUB_LOC']
 APP_ID = os.environ['HUE_APP_ID']
 
 
-def set_light(hub_loc,
-              app_id,
-              light_id,
+def set_light(light_id,
               on=True,
               hue=20000,
               sat=254,
@@ -33,16 +31,25 @@ def set_light(hub_loc,
         transitiontime=transitiontime
     )
     uri = 'http://{hub_loc}/api/{app_id}/lights/{light_id}/state'.format(
-            hub_loc=hub_loc,
-            app_id=app_id,
+            hub_loc=HUB_LOC,
+            app_id=APP_ID,
             light_id=light_id
         )
     payload_string = json.dumps(payload)
     if debug:
         print 'PUT', uri
-        print '   ', payload_string
+        print '   ', payload_string, '\n'
     return requests.put(uri, data=payload_string)
 
+def get_config(debug=False):
+    uri = 'http://{hub_loc}/api/{app_id}/config/'.format(
+            hub_loc=HUB_LOC,
+            app_id=APP_ID
+        )
+    if debug:
+        print 'PUT', uri
+        print '   ', payload_string, '\n'
+    return requests.get(uri).json()
 
 def do_random(light_ids, debug=False, delay=5, transitiontime='delay'):
     if debug:
@@ -54,8 +61,6 @@ def do_random(light_ids, debug=False, delay=5, transitiontime='delay'):
             if transitiontime is 'delay':
                 transitiontime = 10 * delay
             response = set_light(
-                    HUB_LOC,
-                    APP_ID,
                     light_id,
                     hue=hue,
                     transitiontime=int(transitiontime),
@@ -64,14 +69,49 @@ def do_random(light_ids, debug=False, delay=5, transitiontime='delay'):
             if debug:
                 print 'Response:'
                 pprint.pprint(response.json(), indent=4)
+                print
         time.sleep(delay)
+
+def action_method(action):
+    def inner(**args):
+        del args['action']
+        action(**args)
+    return inner
+
+@action_method
+def action_random(**args):
+    do_random_args = copy.copy(args.__dict__)
+    pprint.pprint(do_random_args)
+    del do_random_args['action']
+    do_random(**do_random_args)
+
+@action_method
+def action_config(**args):
+    pprint.pprint(get_config())
+
+@action_method
+def off(light_ids, debug=False, delay=1, transitiontime='delay'):
+    if transitiontime is 'delay':
+        transitiontime = 10 * delay
+    for light_id in light_ids:
+        response = set_light(
+            light_id,
+            on=False,
+            transitiontime=int(transitiontime),
+            debug=debug
+        )
+        if debug:
+            print 'Response:'
+            pprint.pprint(response.json(), indent=4)
+            print
+
 
 def parse_cli_args():
     ''' Command line argument processing '''
 
     parser = argparse.ArgumentParser(description='Control Zigbee lights')
     parser.add_argument(
-            '--lights',
+            '--lights', '-l',
             default=[1],
             dest='light_ids',
             type=lambda a: yaml.load('[%s]' % a if not a.startswith('[') and not '\n' in a else a),
@@ -79,15 +119,18 @@ def parse_cli_args():
         )
     parser.add_argument('--delay', '-d', type=float, default=5)
     parser.add_argument('-v', action='store_true', dest='debug')
-    parser.add_argument('action', choices=['random'])
+    parser.add_argument('action', choices=['random', 'config', 'off'])
     return parser.parse_args()
-
 
 if __name__ == '__main__':
     args = parse_cli_args()
     if args.debug:
-        pprint.pprint(args)
-    if 'random' in args.action:
-        do_random_args = copy.copy(args.__dict__)
-        del do_random_args['action']
-        do_random(**do_random_args)
+        pprint.pprint(vars(args))
+        print
+
+
+    dict(
+        random=action_random,
+        config=action_config,
+        off=off
+    )[args.action](**vars(args))
