@@ -1,0 +1,93 @@
+#!/usr/bin/env python
+
+import argparse
+import copy
+import json
+import os
+import pprint
+import random
+import time
+
+import requests
+import yaml
+
+
+HUB_LOC = os.environ['HUE_HUB_LOC']
+APP_ID = os.environ['HUE_APP_ID']
+
+
+def set_light(hub_loc,
+              app_id,
+              light_id,
+              on=True,
+              hue=20000,
+              sat=254,
+              bri=254,
+              transitiontime=4,
+              debug=False):
+    payload = dict(
+        on=on,
+        sat=sat,
+        bri=bri,
+        hue=hue,
+        transitiontime=transitiontime
+    )
+    uri = 'http://{hub_loc}/api/{app_id}/lights/{light_id}/state'.format(
+            hub_loc=hub_loc,
+            app_id=app_id,
+            light_id=light_id
+        )
+    payload_string = json.dumps(payload)
+    if debug:
+        print 'PUT', uri
+        print '   ', payload_string
+    return requests.put(uri, data=payload_string)
+
+
+def do_random(light_ids, debug=False, delay=5, transitiontime='delay'):
+    if debug:
+        for light_id in light_ids:
+            response = set_light(HUB_LOC, APP_ID, light_id, on=False)
+    while True:
+        hue = random.randint(0, 65535)
+        for light_id in light_ids:
+            if transitiontime is 'delay':
+                transitiontime = 10 * delay
+            response = set_light(
+                    HUB_LOC,
+                    APP_ID,
+                    light_id,
+                    hue=hue,
+                    transitiontime=int(transitiontime),
+                    debug=debug
+                )
+            if debug:
+                print 'Response:'
+                pprint.pprint(response.json(), indent=4)
+        time.sleep(delay)
+
+def parse_cli_args():
+    ''' Command line argument processing '''
+
+    parser = argparse.ArgumentParser(description='Control Zigbee lights')
+    parser.add_argument(
+            '--lights',
+            default=[1],
+            dest='light_ids',
+            type=lambda a: yaml.load('[%s]' % a if not a.startswith('[') and not '\n' in a else a),
+            help='Specify which lights to control (accepts a comma seperated list).'
+        )
+    parser.add_argument('--delay', '-d', type=float, default=5)
+    parser.add_argument('-v', action='store_true', dest='debug')
+    parser.add_argument('action', choices=['random'])
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = parse_cli_args()
+    if args.debug:
+        pprint.pprint(args)
+    if 'random' in args.action:
+        do_random_args = copy.copy(args.__dict__)
+        del do_random_args['action']
+        do_random(**do_random_args)
